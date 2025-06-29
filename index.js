@@ -1,52 +1,57 @@
-import express from 'express';
-import cors from 'cors';
-import dotenv from 'dotenv';
-import multer from 'multer';
-import axios from 'axios';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import express from "express";
+import multer from "multer";
+import axios from "axios";
+import cors from "cors";
+import dotenv from "dotenv";
 
 dotenv.config();
+
 const app = express();
+const upload = multer();
+const PORT = process.env.PORT || 3000;
+
 app.use(cors());
 app.use(express.json());
 
-const storage = multer.memoryStorage();
-const upload = multer({ storage });
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-app.post('/api/generate', upload.single('refImage'), async (req, res) => {
+app.post("/api/generate", upload.single("refImage"), async (req, res) => {
   try {
-    const { prompt, style, characterRef, dialogue, mode, controlType } = req.body;
+    const {
+      prompt = "",
+      style = "comic book",
+      characterRef = "",
+      dialogue = "",
+      mode = "single",
+      controlType = "reference",
+    } = req.body;
 
-    const image = await axios.post(
-      'https://api.stability.ai/v2beta/stable-image/generate/core',
+    const fullPrompt = `${style} style, ${prompt}, character: ${characterRef}`;
+
+    const stabilityResponse = await axios.post(
+      "https://api.stability.ai/v2beta/stable-image/generate/core",
       {
-        prompt: `${style} style, ${prompt}, character: ${characterRef}`,
-        output_format: 'png',
+        prompt: fullPrompt,
+        output_format: "png",
       },
       {
         headers: {
           Authorization: `Bearer ${process.env.STABILITY_API_KEY}`,
-          Accept: 'application/json',
-        }
+          Accept: "application/json",
+        },
+        responseType: "arraybuffer",
       }
     );
 
+    const base64Image = Buffer.from(stabilityResponse.data, "binary").toString("base64");
+
     res.json({
-      imageUrl: image.data.image,
-      panels: mode === 'comic' ? [
-        { imageUrl: image.data.image, dialogue: dialogue }
-      ] : undefined
+      imageBase64: `data:image/png;base64,${base64Image}`,
     });
-  } catch (err) {
-    console.error(err.response?.data || err.message);
-    res.status(500).json({ error: 'Image generation failed.' });
+  } catch (error) {
+    console.error("Error:", error.response?.data || error.message);
+    res.status(500).json({ error: "Image generation failed", details: error.message });
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
